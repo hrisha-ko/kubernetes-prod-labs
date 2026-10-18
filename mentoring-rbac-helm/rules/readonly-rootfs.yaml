@@ -1,0 +1,26 @@
+groups:
+  - name: kyverno-readonly-rootfs
+    interval: 1m
+    rules:
+      # Kyverno reports every require-ro-rootfs failure as a PolicyViolation
+      # event; Alloy ships the events to Loki as log lines like
+      #   ... reason=PolicyViolation ... msg="Pod student01/app: [validate-readonly-rootfs] fail; ..."
+      # The event is emitted when the pod is created and again on every
+      # background scan (hourly), so a 70m window keeps the alert firing while
+      # the pod still fails and resolves about an hour after it is fixed.
+      - alert: ReadOnlyRootFilesystemAuditFailed
+        expr: |
+          sum by (target_namespace, target_pod) (
+            count_over_time(
+              {job="kubernetes-events"} |= "PolicyViolation" |= "require-ro-rootfs"
+                | regexp `Pod (?P<target_namespace>[a-z0-9-]+)/(?P<target_pod>[a-z0-9.-]+): \[(?P<rule>[^\]]+)\] fail`
+                | target_pod != "" | target_namespace =~ "__NAMESPACES__"
+              [70m]
+            )
+          ) > 0
+        labels:
+          severity: warning
+          policy: require-ro-rootfs
+        annotations:
+          summary: "Pod {{ $labels.target_namespace }}/{{ $labels.target_pod }} fails the read-only root filesystem audit"
+          description: "Kyverno policy require-ro-rootfs (Audit) reported that a container of {{ $labels.target_namespace }}/{{ $labels.target_pod }} does not set securityContext.readOnlyRootFilesystem: true."

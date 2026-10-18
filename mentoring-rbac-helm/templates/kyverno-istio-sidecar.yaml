@@ -1,0 +1,38 @@
+{{- if and .Values.kyverno.enabled .Values.kyverno.studentIstioSidecar }}
+# Audit mode: reports pods labeled person=student that run without the Istio
+# sidecar. Validation runs after all mutating webhooks, so it checks the final
+# pod. istio-proxy is a regular container, or an init container when Istio
+# uses native sidecars, so both lists are checked.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-istio-sidecar
+  annotations:
+    # Check Pods only, not Deployment/Job/... templates
+    pod-policies.kyverno.io/autogen-controllers: none
+spec:
+  background: true
+  rules:
+    - name: student-pods-have-istio-proxy
+      skipBackgroundRequests: true   # Kyverno default, avoids an Argo CD diff
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              selector:
+                matchLabels:
+                  person: student
+      validate:
+        failureAction: Audit
+        allowExistingViolations: true   # Kyverno default
+        message: "Pods labeled person=student must run with the Istio sidecar (istio-proxy)."
+        deny:
+          conditions:
+            all:
+              - key: istio-proxy
+                operator: AllNotIn
+                value: {{ "\"{{ request.object.spec.containers[].name }}\"" }}
+              - key: istio-proxy
+                operator: AllNotIn
+                value: {{ "\"{{ request.object.spec.initContainers[].name || `[]` }}\"" }}
+{{- end }}

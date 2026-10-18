@@ -1,0 +1,103 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    # After kube-prometheus-stack: the ruler sends alerts to its Alertmanager
+    argocd.argoproj.io/sync-wave: "6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 7.3.0          # Loki 3.6
+    helm:
+      releaseName: loki
+      valuesObject:
+        # One pod runs every Loki component (ingester, querier, compactor, ruler)
+        deploymentMode: SingleBinary
+        loki:
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          storage:
+            type: filesystem
+          schemaConfig:
+            configs:
+              - from: "2026-01-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: index_
+                  period: 24h
+          # Logs older than 3 days are deleted by the compactor, which keeps the
+          # 1Gi volume from filling up
+          limits_config:
+            retention_period: 72h
+          compactor:
+            retention_enabled: true
+            delete_request_store: filesystem
+          # The ruler evaluates LogQL alert rules and sends firing alerts to the
+          # Alertmanager of kube-prometheus-stack. Rules are files in /rules/<tenant>;
+          # without auth the tenant is "fake".
+          rulerConfig:
+            storage:
+              type: local
+              local:
+                directory: /rules
+            rule_path: /var/loki/ruler-scratch
+            alertmanager_url: http://kps-kube-prometheus-stack-alertmanager.monitoring.svc:9093
+            enable_alertmanager_v2: true
+            enable_api: true
+            ring:
+              kvstore:
+                store: inmemory
+        # Smallest useful volume (local-path does not enforce the size)
+        singleBinary:
+          replicas: 1
+          persistence:
+            enabled: true
+            storageClass: local-path
+            size: 1Gi
+        # Components of the scalable mode, not used
+        read:
+          replicas: 0
+        write:
+          replicas: 0
+        backend:
+          replicas: 0
+        # The memcached caches request 8Gi+ of memory by default
+        chunksCache:
+          enabled: false
+        resultsCache:
+          enabled: false
+        gateway:
+          enabled: false
+        lokiCanary:
+          enabled: false
+        test:
+          enabled: false
+        # Loads every ConfigMap labeled loki_rule in this namespace into the ruler
+        # (the mentoring-rbac chart ships one)
+        sidecar:
+          rules:
+            folder: /rules/fake
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

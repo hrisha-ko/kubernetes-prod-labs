@@ -1,0 +1,109 @@
+# Argo CD Application that installs kube-prometheus-stack: Prometheus Operator,
+# Prometheus, Alertmanager, Grafana, node-exporter and kube-state-metrics.
+#
+# Before the first sync, create the Grafana admin secret (it is not kept in
+# git, see argocd/README.md):
+#   kubectl create namespace monitoring
+#   kubectl -n monitoring create secret generic grafana-admin \
+#     --from-literal=admin-user=admin --from-literal=admin-password='<password>'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    # After the StorageClass (wave -2); nothing else depends on it
+    argocd.argoproj.io/sync-wave: "5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.10.1      # Prometheus Operator v0.94.1
+    helm:
+      releaseName: kps           # short prefix for the generated names
+      valuesObject:
+        kubeEtcd:
+          enabled: false
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+
+        prometheus:
+          prometheusSpec:
+            retention: 2d
+            retentionSize: 700MB
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: local-path
+                  accessModes: [ReadWriteOnce]
+                  resources:
+                    requests:
+                      storage: 10Gi
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            probeSelectorNilUsesHelmValues: false
+
+        alertmanager:
+          alertmanagerSpec:
+            storage: {}          # emptyDir: silences are lost on restart
+
+        grafana:
+          persistence:
+            enabled: true
+            type: pvc
+            storageClassName: local-path
+            size: 1Gi
+          # Logs from Loki (loki.yaml); the uid is used by dashboards
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              uid: loki
+              url: http://loki.monitoring.svc:3100
+              access: proxy
+          # A generated password would change on every Argo CD render
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+
+        prometheus-node-exporter:
+          # Also run on the control-plane nodes (CriticalAddonsOnly:NoExecute)
+          tolerations:
+            - operator: Exists
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  # The operator's admission webhook certificate is created by a hook job,
+  # which writes caBundle into the webhook configurations after the sync
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The Prometheus Operator CRDs are too large for client-side apply
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

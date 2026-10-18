@@ -1,0 +1,14 @@
+{{- if and .Values.monitoring.rootfsAudit .Values.kyverno.enabled }}
+# Loki's rules sidecar loads every ConfigMap labeled loki_rule into the ruler.
+# The alert covers the namespaces of this chart; the dashboard shows all.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: readonly-rootfs-loki-rules
+  namespace: {{ .Values.monitoring.namespace }}
+  labels:
+    loki_rule: "1"
+data:
+  readonly-rootfs.yaml: |-
+    {{- .Files.Get "rules/readonly-rootfs.yaml" | trimSuffix "\n" | replace "__NAMESPACES__" (keys .Values.namespaces | sortAlpha | join "|") | nindent 4 }}
+{{- end }}

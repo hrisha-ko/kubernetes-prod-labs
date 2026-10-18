@@ -1,0 +1,5 @@
+apiVersion: v2
+name: mentoring-rbac
+description: Namespaces and RBAC for a mentor and three students
+type: application
+version: 0.4.1

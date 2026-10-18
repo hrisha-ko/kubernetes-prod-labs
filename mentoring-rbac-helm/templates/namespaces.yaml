@@ -1,0 +1,23 @@
+{{- if .Values.createNamespaces }}
+{{- range $name, $role := .Values.namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $name }}
+  labels:
+    team: mentoring
+    role: {{ $role }}
+    {{- if and (eq $role "student") $.Values.kyverno.studentIstioSidecar }}
+    # Istio injects the sidecar into every pod created here. A namespace label
+    # is needed because Istio's webhook runs before Kyverno's and is never
+    # called again for a label that Kyverno adds to the pod.
+    istio-injection: enabled
+    {{- end }}
+  annotations:
+    # Keep the namespace (and its workloads) on "helm uninstall"
+    # and when it is removed from the chart or the Argo CD app is deleted
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+{{- end }}
+{{- end }}

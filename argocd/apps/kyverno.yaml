@@ -1,0 +1,45 @@
+# Argo CD Application that installs Kyverno from its official Helm chart.
+# Created by the root app (argocd/root.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  annotations:
+    # Created before mentoring-rbac, whose policies need Kyverno's CRDs
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kyverno.github.io/kyverno/
+    chart: kyverno
+    targetRevision: 3.9.1        # Kyverno v1.19.1
+    helm:
+      valuesObject:
+        # The kyverno-api subchart renders "labels: {}" and "annotations: {}" on
+        # the policies.kyverno.io CRDs. Kubernetes drops empty maps, so Argo CD
+        # shows them as OutOfSync forever. Non-empty values avoid that.
+        kyverno-api:
+          labels:
+            app.kubernetes.io/part-of: kyverno
+          annotations:
+            argocd.argoproj.io/sync-options: ServerSideApply=true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Kyverno's CRDs are too large for client-side apply
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

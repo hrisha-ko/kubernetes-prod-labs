@@ -1,0 +1,52 @@
+# Namespaces created by the chart (default already exists and is not listed).
+# They are kept on "helm uninstall" so that workloads inside are not deleted.
+createNamespaces: true
+# namespace: role. The role becomes the namespace's "role" label and the value
+# of the "person" label that Kyverno puts on the pods in that namespace.
+namespaces:
+  mentor: mentor
+  student01: student
+  student02: student
+  student03: student
+
+# user -> ClusterRole -> namespaces where it is bound with a RoleBinding.
+# Only namespace-scoped RoleBindings are created, so nobody gets cluster-admin.
+#   admin - full access within the namespace (including its Roles/RoleBindings)
+#   edit  - RW, no RBAC management
+#   view  - RO, no access to Secrets
+access:
+  mentor:
+    admin: [mentor]
+    edit: [student01, student02, student03]
+  student01:
+    edit: [student01]
+  student02:
+    view: [student01, default]
+    # Not required by the task: delete this line if student02
+    # must not have RW on their own namespace.
+    edit: [student02]
+  student03:
+    edit: [student03]
+
+# Kyverno policies. Kyverno itself must already be installed in the cluster,
+# otherwise set enabled to false.
+kyverno:
+  enabled: true
+  # Student namespaces get the istio-injection=enabled label, so Istio adds a
+  # sidecar to every pod there, and the require-istio-sidecar policy reports
+  # pods labeled person=student that run without one (Audit), e.g. pods
+  # created with the label sidecar.istio.io/inject=false.
+  studentIstioSidecar: true
+
+# Monitoring objects, created in the namespace of kube-prometheus-stack, which
+# must already exist.
+monitoring:
+  namespace: monitoring
+  # Grafana dashboard "Student namespaces / Node load": CPU, memory and
+  # network per student namespace and node. Needs kube-prometheus-stack.
+  nodeLoadDashboard: true
+  # Grafana dashboard "Kyverno / Read-only root filesystem audit" and the Loki
+  # alert ReadOnlyRootFilesystemAuditFailed, both built on Kyverno's
+  # PolicyViolation events. Needs Loki and Alloy (argocd/apps) and
+  # kyverno.enabled.
+  rootfsAudit: true

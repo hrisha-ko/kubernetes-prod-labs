@@ -1,0 +1,45 @@
+# Argo CD Application for the mentoring-rbac Helm chart.
+# Created by the root app (argocd/root.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mentoring-rbac
+  namespace: argocd
+  annotations:
+    # Created after Kyverno (wave -1), whose CRDs the policies need
+    argocd.argoproj.io/sync-wave: "0"
+  # Deleting the Application also deletes what it created
+  # (except the namespaces, see templates/namespaces.yaml)
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hrisha-ko/kubernetes-labs.git
+    targetRevision: main
+    path: mentoring-rbac-helm         # chart folder inside the repository
+    helm:
+      releaseName: rbac
+      valueFiles:
+        - values.yaml
+      # Same as "helm install --set ..." - uncomment to override values:
+      # parameters:
+      #   - name: kyverno.enabled
+      #     value: "false"
+  destination:
+    server: https://kubernetes.default.svc   # the cluster Argo CD runs in
+  syncPolicy:
+    automated:
+      prune: true      # delete objects that were removed from the chart
+      selfHeal: true   # revert manual changes, e.g. a RoleBinding edited by hand
+    syncOptions:
+      # Server-side apply keeps Kyverno's defaults on ClusterPolicy from
+      # showing up as a permanent OutOfSync diff
+      - ServerSideApply=true
+    # If Kyverno is not ready yet on the first sync, try again
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

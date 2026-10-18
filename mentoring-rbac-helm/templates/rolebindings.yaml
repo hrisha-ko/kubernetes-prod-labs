@@ -1,0 +1,23 @@
+{{- range $user, $roles := .Values.access }}
+{{- range $role, $namespaces := $roles }}
+{{- if not (has $role (list "admin" "edit" "view")) }}
+{{- fail (printf "access.%s: role %q is not allowed, use admin, edit or view" $user $role) }}
+{{- end }}
+{{- range $namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $user }}-{{ $role }}
+  namespace: {{ . }}
+subjects:
+  - kind: User
+    name: {{ $user }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: {{ $role }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+{{- end }}
+{{- end }}

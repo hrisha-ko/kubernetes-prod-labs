@@ -1,0 +1,443 @@
+{
+  "uid": "kyverno-readonly-rootfs",
+  "title": "Kyverno / Read-only root filesystem audit",
+  "description": "Failures of the Kyverno policy require-ro-rootfs (Audit), from Kyverno's PolicyViolation events collected in Loki.",
+  "tags": [
+    "kyverno",
+    "security",
+    "students"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "loki",
+        "label": "Logs",
+        "type": "datasource",
+        "query": "loki",
+        "current": {
+          "text": "Loki",
+          "value": "loki"
+        },
+        "hide": 0
+      },
+      {
+        "name": "prometheus",
+        "label": "Metrics",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 2
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus}"
+        },
+        "query": {
+          "query": "label_values(kube_namespace_status_phase, namespace)",
+          "refId": "ns"
+        },
+        "definition": "label_values(kube_namespace_status_phase, namespace)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Failed checks",
+      "description": "PolicyViolation events of require-ro-rootfs in the time range (one per pod per admission or background scan).",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"kubernetes-events\"} |= \"PolicyViolation\" |= \"require-ro-rootfs\" | regexp `Pod (?P<target_namespace>[a-z0-9-]+)/(?P<target_pod>[a-z0-9.-]+): \\[(?P<rule>[^\\]]+)\\] fail` | regexp `failed at path (?P<path>[^ \"]+)` | target_pod != \"\" | target_namespace =~ \"$namespace\" [$__range]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Pods failing",
+      "description": "Distinct pods that failed the audit in the time range.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(sum by (target_namespace, target_pod) (count_over_time({job=\"kubernetes-events\"} |= \"PolicyViolation\" |= \"require-ro-rootfs\" | regexp `Pod (?P<target_namespace>[a-z0-9-]+)/(?P<target_pod>[a-z0-9.-]+): \\[(?P<rule>[^\\]]+)\\] fail` | regexp `failed at path (?P<path>[^ \"]+)` | target_pod != \"\" | target_namespace =~ \"$namespace\" [$__range])))",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Namespaces affected",
+      "description": "Distinct namespaces with failing pods.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(sum by (target_namespace) (count_over_time({job=\"kubernetes-events\"} |= \"PolicyViolation\" |= \"require-ro-rootfs\" | regexp `Pod (?P<target_namespace>[a-z0-9-]+)/(?P<target_pod>[a-z0-9.-]+): \\[(?P<rule>[^\\]]+)\\] fail` | regexp `failed at path (?P<path>[^ \"]+)` | target_pod != \"\" | target_namespace =~ \"$namespace\" [$__range])))",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "alertlist",
+      "title": "Alert ReadOnlyRootFilesystemAuditFailed",
+      "datasource": null,
+      "description": "Firing instances of the Loki alert, read from Alertmanager.",
+      "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "maxItems": 20,
+        "sortOrder": 1,
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "normal": false,
+          "error": true,
+          "noData": false
+        },
+        "alertName": "ReadOnlyRootFilesystemAuditFailed",
+        "alertInstanceLabelFilter": "",
+        "datasource": "Alertmanager",
+        "showInstances": true,
+        "groupBy": [],
+        "dashboardAlerts": false
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Failed checks by namespace",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (target_namespace) (count_over_time({job=\"kubernetes-events\"} |= \"PolicyViolation\" |= \"require-ro-rootfs\" | regexp `Pod (?P<target_namespace>[a-z0-9-]+)/(?P<target_pod>[a-z0-9.-]+): \\[(?P<rule>[^\\]]+)\\] fail` | regexp `failed at path (?P<path>[^ \"]+)` | target_pod != \"\" | target_namespace =~ \"$namespace\" [$__auto]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "legendFormat": "{{target_namespace}}",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Failing pods",
+      "description": "Pods with at least one failure in the time range, and the first failing path.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (target_namespace, target_pod, path) (count_over_time({job=\"kubernetes-events\"} |= \"PolicyViolation\" |= \"require-ro-rootfs\" | regexp `Pod (?P<target_namespace>[a-z0-9-]+)/(?P<target_pod>[a-z0-9.-]+): \\[(?P<rule>[^\\]]+)\\] fail` | regexp `failed at path (?P<path>[^ \"]+)` | target_pod != \"\" | target_namespace =~ \"$namespace\" [$__range]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "target_namespace": 0,
+              "target_pod": 1,
+              "path": 2
+            },
+            "renameByName": {
+              "target_namespace": "Namespace",
+              "target_pod": "Pod",
+              "path": "Failing field",
+              "Value": "Failures",
+              "Value #A": "Failures"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Failures",
+            "desc": true
+          }
+        ]
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "PolicyViolation events (raw log lines)",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"kubernetes-events\"} |= \"PolicyViolation\" |= \"require-ro-rootfs\" | regexp `Pod (?P<target_namespace>[a-z0-9-]+)/(?P<target_pod>[a-z0-9.-]+): \\[(?P<rule>[^\\]]+)\\] fail` | regexp `failed at path (?P<path>[^ \"]+)` | target_pod != \"\" | target_namespace =~ \"$namespace\"",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "legendFormat": "",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 12
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{{- /* Regex of the namespaces with role "student", e.g. student01|student02 */}}
+{{- $students := list }}
+{{- range $name, $role := .Values.namespaces }}
+{{- if eq $role "student" }}
+{{- $students = append $students $name }}
+{{- end }}
+{{- end }}
+{{- if .Values.monitoring.nodeLoadDashboard }}
+# Grafana's sidecar loads every ConfigMap labeled grafana_dashboard=1
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: student-node-load-dashboard
+  namespace: {{ .Values.monitoring.namespace }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  student-node-load.json: |-
+    {{- .Files.Get "dashboards/student-node-load.json" | replace "__STUDENT_NS__" (join "|" $students) | nindent 4 }}
+{{- end }}
+{{- if and .Values.monitoring.rootfsAudit .Values.kyverno.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: readonly-rootfs-audit-dashboard
+  namespace: {{ .Values.monitoring.namespace }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  readonly-rootfs-audit.json: |-
+    {{- .Files.Get "dashboards/readonly-rootfs-audit.json" | nindent 4 }}
+{{- end }}

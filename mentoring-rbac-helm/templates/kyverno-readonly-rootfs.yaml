@@ -1,0 +1,34 @@
+{{- if .Values.kyverno.enabled }}
+# Audit mode: pods that violate the rule are still admitted; the violation is
+# recorded in a PolicyReport (kubectl get policyreport -A).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-ro-rootfs
+spec:
+  background: true
+  rules:
+    - name: validate-readonly-rootfs
+      # Kyverno defaults, written out so Argo CD does not show them as a diff
+      skipBackgroundRequests: true
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      validate:
+        failureAction: Audit
+        allowExistingViolations: true   # Kyverno default
+        message: "Containers must set securityContext.readOnlyRootFilesystem: true."
+        pattern:
+          spec:
+            # =() - checked only if the field is present
+            =(initContainers):
+              - securityContext:
+                  readOnlyRootFilesystem: true
+            =(ephemeralContainers):
+              - securityContext:
+                  readOnlyRootFilesystem: true
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: true
+{{- end }}

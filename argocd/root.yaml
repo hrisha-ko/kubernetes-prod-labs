@@ -1,0 +1,46 @@
+# Root app ("app of apps"): creates every Application in argocd/apps/.
+#   wave -2  gateway-api-crds        Gateway API CRDs
+#   wave -2  local-path-provisioner  default StorageClass (local-path)
+#   wave -1  kyverno                 Kyverno
+#   wave  0  mentoring-rbac          namespaces, RBAC and Kyverno policies
+#   wave  1  istio-base              Istio CRDs
+#   wave  2  istio-cni               Istio CNI node agent
+#   wave  3  istiod                  Istio control plane
+#   wave  4  istio-gateway           ingress gateway on the MetalLB address
+#   wave  5  kube-prometheus-stack   Prometheus, Alertmanager, Grafana
+#   wave  6  loki                    log database, LogQL alert rules
+#   wave  7  alloy                   ships pod logs and Kubernetes events to Loki
+# Child apps retry their sync until the apps they depend on are ready.
+#
+# Source: github.com/hrisha-ko/kubernetes-labs (public, no credentials needed).
+# This is the only file applied by hand:
+#   kubectl apply -n argocd -f argocd/root.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  # No resources-finalizer on purpose: deleting the root app leaves the child
+  # apps and everything they created in place.
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hrisha-ko/kubernetes-labs.git
+    targetRevision: main
+    path: argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true      # an Application file removed from apps/ is deleted
+      selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true
+  # Argo CD adds pre-delete finalizers to apps whose chart has PreDelete hooks
+  # (kyverno); they are not in git and would keep root OutOfSync.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jqPathExpressions:
+        - .metadata.finalizers[]? | select(startswith("pre-delete-finalizer"))

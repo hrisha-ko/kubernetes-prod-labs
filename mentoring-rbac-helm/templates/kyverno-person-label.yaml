@@ -1,0 +1,52 @@
+{{- if .Values.kyverno.enabled }}
+{{- /* Group the namespaces by role: {mentor: [mentor], student: [student01, ...]} */}}
+{{- $byRole := dict }}
+{{- range $ns, $role := .Values.namespaces }}
+{{- $_ := set $byRole $role (append (get $byRole $role | default list) $ns) }}
+{{- end }}
+# Sets the "person" label on pods to the role of their namespace and removes
+# it everywhere else. A value set by the user is overwritten, so it cannot be spoofed.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-person-label
+  annotations:
+    # Mutate Pods only, do not rewrite Deployment/Job/... templates
+    pod-policies.kyverno.io/autogen-controllers: none
+spec:
+  rules:
+    {{- range $role, $namespaces := $byRole }}
+    - name: label-{{ $role }}-pods
+      skipBackgroundRequests: true   # Kyverno default, avoids an Argo CD diff
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: {{ toJson $namespaces }}
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              person: {{ $role }}
+    {{- end }}
+    - name: remove-person-label-elsewhere
+      skipBackgroundRequests: true   # Kyverno default, avoids an Argo CD diff
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ keys .Values.namespaces | sortAlpha | toJson }}
+      preconditions:
+        all:
+          # The backticks keep Helm from evaluating Kyverno's own {{ "{{ }}" }} expression
+          - key: {{ `"{{ request.object.metadata.labels.person || '' }}"` }}
+            operator: NotEquals
+            value: ""
+      mutate:
+        patchesJson6902: |-
+          - op: remove
+            path: /metadata/labels/person
+{{- end }}
